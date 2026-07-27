@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 import {
 	Upload,
+	Download,
 	RotateCcw,
 	Shuffle,
 	ChevronLeft,
@@ -30,6 +31,7 @@ import {
 	Settings2,
 	X,
 } from "lucide-react";
+import React from "react";
 
 type ProgressInfo = {
 	attempts: number;
@@ -93,7 +95,159 @@ type TypingState = {
 
 const SET_STORAGE_KEY = "quizlet_style_app_sets_v3";
 const QUIZ_SESSION_STORAGE_KEY = "quizlet_style_app_active_quiz_v1";
+const BACKUP_APP_NAME = "quizlet-style-webapp";
+const BACKUP_VERSION = 1;
 
+type QuizAppBackup = {
+	app: string;
+	version: number;
+	exportedAt: string;
+	data: {
+		sets: string | null;
+		activeQuiz: string | null;
+	};
+};
+
+/**
+ * Export the app's localStorage data to a JSON file.
+ */
+function exportQuizProgress() {
+	const backup: QuizAppBackup = {
+		app: BACKUP_APP_NAME,
+		version: BACKUP_VERSION,
+		exportedAt: new Date().toISOString(),
+		data: {
+			sets: localStorage.getItem(SET_STORAGE_KEY),
+			activeQuiz: localStorage.getItem(QUIZ_SESSION_STORAGE_KEY),
+		},
+	};
+
+	const json = JSON.stringify(backup, null, 2);
+
+	const blob = new Blob([json], {
+		type: "application/json",
+	});
+
+	const url = URL.createObjectURL(blob);
+
+	const link = document.createElement("a");
+
+	const date = new Date().toISOString().slice(0, 10);
+
+	link.href = url;
+	link.download = `quizlet-backup-${date}.json`;
+
+	document.body.appendChild(link);
+
+	link.click();
+
+	document.body.removeChild(link);
+
+	URL.revokeObjectURL(url);
+}
+
+/**
+ * Import a previously exported backup file.
+ */
+function importQuizProgress(file: File): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+
+		reader.onload = () => {
+			try {
+				const text = reader.result;
+
+				if (typeof text !== "string") {
+					throw new Error("Could not read the backup file.");
+				}
+
+				const backup = JSON.parse(text);
+
+				// Validate basic backup structure
+				if (!backup || typeof backup !== "object") {
+					throw new Error("This is not a valid backup file.");
+				}
+
+				if (backup.app !== BACKUP_APP_NAME) {
+					throw new Error("This backup was not created by this quiz app.");
+				}
+
+				if (backup.version !== BACKUP_VERSION) {
+					throw new Error(
+						"This backup was created by an incompatible version of the app.",
+					);
+				}
+
+				if (!backup.data || typeof backup.data !== "object") {
+					throw new Error("The backup file does not contain valid data.");
+				}
+
+				const { sets, activeQuiz } = backup.data;
+
+				// Validate that sets is either null or valid JSON
+				if (sets !== null) {
+					if (typeof sets !== "string") {
+						throw new Error("The backup contains invalid deck data.");
+					}
+
+					const parsedSets = JSON.parse(sets);
+
+					if (!Array.isArray(parsedSets)) {
+						throw new Error("The backup contains invalid deck data.");
+					}
+				}
+
+				// Validate active quiz JSON
+				if (activeQuiz !== null) {
+					if (typeof activeQuiz !== "string") {
+						throw new Error("The backup contains invalid quiz data.");
+					}
+
+					JSON.parse(activeQuiz);
+				}
+
+				// Ask user to confirm before overwriting local data
+				const confirmed = window.confirm(
+					"Import this quiz backup?\n\n" +
+						"This will replace the quiz data currently stored on this device.",
+				);
+
+				if (!confirmed) {
+					resolve();
+					return;
+				}
+
+				// Restore deck data
+				if (sets !== null) {
+					localStorage.setItem(SET_STORAGE_KEY, sets);
+				} else {
+					localStorage.removeItem(SET_STORAGE_KEY);
+				}
+
+				// Restore active quiz session
+				if (activeQuiz !== null) {
+					localStorage.setItem(QUIZ_SESSION_STORAGE_KEY, activeQuiz);
+				} else {
+					localStorage.removeItem(QUIZ_SESSION_STORAGE_KEY);
+				}
+
+				resolve();
+			} catch (error) {
+				reject(
+					error instanceof Error
+						? error
+						: new Error("Could not import the backup."),
+				);
+			}
+		};
+
+		reader.onerror = () => {
+			reject(new Error("Could not read the backup file."));
+		};
+
+		reader.readAsText(file);
+	});
+}
 const defaultQuizSettings: QuizSettings = {
 	minAccuracy: 0,
 	maxAccuracy: 100,
@@ -519,6 +673,122 @@ function ProgressPill({ label, value }: { label: string; value: string }) {
 			<div className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
 				{value}
 			</div>
+		</div>
+	);
+}
+function BackupRestore() {
+	const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+	const [message, setMessage] = React.useState<string | null>(null);
+
+	const [error, setError] = React.useState<string | null>(null);
+
+	const handleExport = () => {
+		try {
+			setMessage(null);
+			setError(null);
+
+			exportQuizProgress();
+
+			setMessage("Progress exported successfully.");
+		} catch (error) {
+			setError(
+				error instanceof Error
+					? error.message
+					: "Could not export your progress.",
+			);
+		}
+	};
+
+	const handleImportClick = () => {
+		fileInputRef.current?.click();
+	};
+
+	const handleFileSelected = async (
+		event: React.ChangeEvent<HTMLInputElement>,
+	) => {
+		const file = event.target.files?.[0];
+
+		// Reset the input so the same file
+		// can be selected again later.
+		event.target.value = "";
+
+		if (!file) {
+			return;
+		}
+
+		try {
+			setMessage(null);
+			setError(null);
+
+			await importQuizProgress(file);
+
+			setMessage("Progress restored successfully. Reloading...");
+
+			// Give the user a moment to see
+			// the success message.
+			setTimeout(() => {
+				window.location.reload();
+			}, 500);
+		} catch (error) {
+			setError(
+				error instanceof Error
+					? error.message
+					: "Could not import your progress.",
+			);
+		}
+	};
+
+	return (
+		<div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+			<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+				<div>
+					<h2 className="font-semibold text-slate-900 dark:text-slate-100">
+						Backup & Restore
+					</h2>
+
+					<p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+						Export your quiz progress to a file and import it on another
+						computer.
+					</p>
+				</div>
+
+				<div className="flex flex-wrap gap-2">
+					<button
+						type="button"
+						onClick={handleExport}
+						className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">
+						<Download className="h-4 w-4" />
+						Export Progress
+					</button>
+
+					<button
+						type="button"
+						onClick={handleImportClick}
+						className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800">
+						<Upload className="h-4 w-4" />
+						Import Progress
+					</button>
+
+					<input
+						ref={fileInputRef}
+						type="file"
+						accept=".json,application/json"
+						onChange={handleFileSelected}
+						className="hidden"
+					/>
+				</div>
+			</div>
+
+			{message && (
+				<p className="mt-3 text-sm text-green-600 dark:text-green-400">
+					{message}
+				</p>
+			)}
+
+			{error && (
+				<p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+			)}
 		</div>
 	);
 }
@@ -1263,6 +1533,7 @@ function App() {
 				*/}
 
 				<div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+					<BackupRestore />
 					<ProgressPill label="Sets" value={String(sets.length)} />
 
 					<ProgressPill label="Cards" value={String(stats.total)} />
