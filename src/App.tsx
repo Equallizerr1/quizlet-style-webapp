@@ -1899,10 +1899,10 @@ function App() {
 															"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition",
 															!showResult &&
 																isSelected &&
-																"border-slate-900 bg-slate-100 dark:border-slate-100 dark:bg-slate-800",
+																"border-slate-900 bg-slate-100 dark:border-slate-100dark:bg-slate-800",
 															!showResult &&
 																!isSelected &&
-																"border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900",
+																"border-slate-200 bg-white hover:bg-slate-500 dark:border-slate-700 dark:bg-slate-900",
 															showResult &&
 																isCorrect &&
 																"border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950",
