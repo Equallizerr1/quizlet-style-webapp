@@ -4,6 +4,8 @@ import * as XLSX from "xlsx";
 import {
 	Upload,
 	Download,
+	Maximize,
+	Minimize,
 	RotateCcw,
 	Shuffle,
 	ChevronLeft,
@@ -97,6 +99,18 @@ const SET_STORAGE_KEY = "quizlet_style_app_sets_v3";
 const QUIZ_SESSION_STORAGE_KEY = "quizlet_style_app_active_quiz_v1";
 const BACKUP_APP_NAME = "quizlet-style-webapp";
 const BACKUP_VERSION = 1;
+
+function shuffleArray<T>(array: T[]): T[] {
+	const shuffled = [...array];
+
+	for (let i = shuffled.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+
+		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+	}
+
+	return shuffled;
+}
 
 type QuizAppBackup = {
 	app: string;
@@ -795,6 +809,23 @@ function BackupRestore() {
 function App() {
 	const [sets, setSets] = usePersistentSets();
 	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const quizModeRef = useRef<HTMLDivElement>(null);
+	const [isQuizFullscreen, setIsQuizFullscreen] = useState(false);
+	const toggleQuizFullscreen = async () => {
+		if (!quizModeRef.current) {
+			return;
+		}
+
+		try {
+			if (!document.fullscreenElement) {
+				await quizModeRef.current.requestFullscreen();
+			} else {
+				await document.exitFullscreen();
+			}
+		} catch (error) {
+			console.error("Unable to toggle fullscreen:", error);
+		}
+	};
 	const [activeSetId, setActiveSetId] = useState<string>(
 		() => sets[0]?.id || sampleSet.id,
 	);
@@ -958,6 +989,14 @@ function App() {
 
 	const activeQuizCard = quizDeck[quiz.index];
 
+	const shuffledQuizOptions = useMemo(() => {
+		if (!activeQuizCard) {
+			return [];
+		}
+
+		return shuffleArray(activeQuizCard.options);
+	}, [activeQuizCard]);
+
 	const isMultiSelect =
 		activeQuizCard?.correctAnswers.length > 1 ||
 		/\(choose\s+two\)|\(choose\s+all\s+that\s+apply\)/i.test(
@@ -1053,7 +1092,17 @@ function App() {
 
 		setResumeAvailable(false);
 	}, []);
+	useEffect(() => {
+		const handleFullscreenChange = () => {
+			setIsQuizFullscreen(document.fullscreenElement === quizModeRef.current);
+		};
 
+		document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+		return () => {
+			document.removeEventListener("fullscreenchange", handleFullscreenChange);
+		};
+	}, []);
 	useEffect(() => {
 		if (typeof window === "undefined") {
 			return;
@@ -1514,7 +1563,6 @@ function App() {
 			abandonQuiz();
 		}
 	};
-
 	const selectedSet = new Set(quiz.selected);
 
 	return (
@@ -1849,8 +1897,17 @@ function App() {
 									</div>
 								</div>
 							) : mode === "quiz" ? (
-								<div className="mt-6 min-w-0 space-y-4">
-									<div className="flex flex-wrap items-center justify-between gap-3">
+								<div
+									ref={quizModeRef}
+									className={classNames(
+										"mt-6 min-w-0 space-y-4",
+										isQuizFullscreen &&
+											"m-0 min-h-screen overflow-y-auto bg-white px-4 py-8 dark:bg-slate-950 sm:px-8 sm:py-12 lg:px-38 lg:py-42",
+									)}>
+									<div
+										className={classNames(
+											isQuizFullscreen && "mx-auto w-full max-w-5xl",
+										)}>
 										<div className="flex flex-wrap items-center gap-2">
 											<button
 												type="button"
@@ -1869,14 +1926,20 @@ function App() {
 													Exit quiz
 												</button>
 											) : null}
-										</div>
 
-										{quizStarted ? (
-											<div className="text-sm text-slate-500 dark:text-slate-400">
-												Question {quiz.index + 1} of {quizDeck.length} • Score:{" "}
-												{quiz.score}
-											</div>
-										) : null}
+											<button
+												type="button"
+												onClick={toggleQuizFullscreen}
+												className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
+												{isQuizFullscreen ? (
+													<Minimize className="h-4 w-4" />
+												) : (
+													<Maximize className="h-4 w-4" />
+												)}
+
+												{isQuizFullscreen ? "Exit fullscreen" : "Fullscreen"}
+											</button>
+										</div>
 									</div>
 
 									<AnimatePresence>
@@ -2085,7 +2148,13 @@ function App() {
 												Quiz question
 											</div>
 
-											<h2 className="mt-3 break-words text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
+											<h2
+												className="mt-3 break-words font-semibold leading-tight text-slate-900 dark:text-slate-100"
+												style={{
+													fontSize: isQuizFullscreen
+														? "clamp(1.5rem, 5vw, 3rem)"
+														: "1.5rem",
+												}}>
 												{activeQuizCard.question}
 											</h2>
 
@@ -2096,7 +2165,7 @@ function App() {
 											</div>
 
 											<div className="mt-5 grid min-w-0 gap-3">
-												{activeQuizCard.options.map((choice) => {
+												{shuffledQuizOptions.map((choice) => {
 													const isCorrect =
 														activeQuizCard.correctAnswers.includes(choice);
 
@@ -2109,8 +2178,16 @@ function App() {
 															key={choice}
 															type="button"
 															onClick={() => toggleSelection(choice)}
+															style={{
+																fontSize: isQuizFullscreen
+																	? "clamp(1rem, 2vw, 2.5rem)"
+																	: "0.875rem",
+															}}
 															className={classNames(
-																"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition",
+																"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left font-medium transition",
+																isQuizFullscreen
+																	? "text-lg sm:text-xl lg:text-2xl"
+																	: "text-sm",
 																!showResult &&
 																	isSelected &&
 																	"border-slate-900 bg-slate-100 dark:border-slate-100 dark:bg-slate-800",
@@ -2138,7 +2215,9 @@ function App() {
 																	) : null}
 																</span>
 
-																<span className="break-words">{choice}</span>
+																<span className="wrap-break-word">
+																	{choice}
+																</span>
 															</span>
 
 															<span className="ml-3 shrink-0">
