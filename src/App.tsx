@@ -794,7 +794,7 @@ function BackupRestore() {
 }
 function App() {
 	const [sets, setSets] = usePersistentSets();
-
+	const [sidebarOpen, setSidebarOpen] = useState(false);
 	const [activeSetId, setActiveSetId] = useState<string>(
 		() => sets[0]?.id || sampleSet.id,
 	);
@@ -1340,12 +1340,18 @@ function App() {
 			return;
 		}
 
-		setQuiz((prev) => ({
-			...prev,
-			selected: prev.selected.includes(choice)
+		setQuiz((prev) => {
+			const alreadySelected = prev.selected.includes(choice);
+
+			const nextSelected = alreadySelected
 				? prev.selected.filter((item) => item !== choice)
-				: [...prev.selected, choice],
-		}));
+				: [...prev.selected, choice];
+
+			return {
+				...prev,
+				selected: nextSelected,
+			};
+		});
 	};
 
 	const submitQuiz = () => {
@@ -1354,33 +1360,36 @@ function App() {
 		}
 
 		const selected = uniqueStrings(quiz.selected);
-
 		const correct = uniqueStrings(activeQuizCard.correctAnswers);
 
 		const isExactMatch =
 			selected.length === correct.length &&
 			selected.every((item) => correct.includes(item));
 
+		const nextScore = quiz.score + (isExactMatch ? 1 : 0);
+
+		// Update the quiz UI immediately.
 		setQuiz((prev) => ({
 			...prev,
 			submitted: true,
-			score: prev.score + (isExactMatch ? 1 : 0),
+			score: nextScore,
 		}));
 
+		// Update the card's learning progress.
 		updateCardProgress(activeQuizCard.id, isExactMatch);
 
-		setTimeout(() => {
-			saveQuizSession({
-				submitted: true,
-				score: quiz.score + (isExactMatch ? 1 : 0),
-			});
-		}, 0);
+		// Save the current quiz session.
+		saveQuizSession({
+			submitted: true,
+			score: nextScore,
+		});
 	};
 
 	const nextQuiz = () => {
 		if (quiz.index + 1 >= quizDeck.length) {
 			setQuizStarted(false);
 			setQuizDeck([]);
+
 			setQuiz({
 				index: 0,
 				score: 0,
@@ -1402,13 +1411,11 @@ function App() {
 			submitted: false,
 		}));
 
-		setTimeout(() => {
-			saveQuizSession({
-				index: nextIndex,
-				selected: [],
-				submitted: false,
-			});
-		}, 0);
+		saveQuizSession({
+			index: nextIndex,
+			selected: [],
+			submitted: false,
+		});
 	};
 
 	const submitTyping = () => {
@@ -1532,880 +1539,913 @@ function App() {
 				</header>
 				*/}
 
-				<div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-					<BackupRestore />
-					<ProgressPill label="Sets" value={String(sets.length)} />
-
-					<ProgressPill label="Cards" value={String(stats.total)} />
-
-					<ProgressPill label="Due now" value={String(stats.dueNow)} />
-
-					<ProgressPill label="Reviewed" value={String(stats.reviewed)} />
-
-					<ProgressPill label="Mastered" value={String(stats.mastered)} />
-
-					<ProgressPill label="Avg accuracy" value={`${stats.avgAccuracy}%`} />
-				</div>
-
-				<main className="mt-6 grid min-w-0 flex-1 gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-					<aside className="min-w-0 space-y-6">
-						<FileDropzone onImport={saveNewSet} />
-
-						<div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-							<div className="flex items-center justify-between gap-3">
-								<div className="min-w-0">
-									<h2 className="text-lg font-semibold">Your sets</h2>
-
-									<p className="text-sm text-slate-500 dark:text-slate-400">
-										Stored locally in this browser.
-									</p>
-								</div>
-
-								<FolderPlus className="h-5 w-5 shrink-0 text-slate-400" />
-							</div>
-
-							<div className="mt-4 space-y-3">
-								{sets.map((set) => {
-									const active = set.id === activeSetId;
-
-									return (
-										<div
-											key={set.id}
-											className={classNames(
-												"rounded-2xl border p-4 transition",
-												active
-													? "border-slate-900 bg-slate-50 dark:border-slate-100 dark:bg-slate-950"
-													: "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900",
-											)}>
-											<div className="flex min-w-0 items-start justify-between gap-3">
-												<button
-													type="button"
-													onClick={() => setActiveSetId(set.id)}
-													className="min-w-0 flex-1 text-left">
-													<div className="flex min-w-0 items-center gap-2">
-														<LayoutGrid className="h-4 w-4 shrink-0 text-slate-400" />
-
-														{renamingId === set.id ? (
-															<input
-																autoFocus
-																value={renameValue}
-																onChange={(e) => setRenameValue(e.target.value)}
-																onKeyDown={(e) => {
-																	if (e.key === "Enter") {
-																		confirmRename();
-																	}
-
-																	if (e.key === "Escape") {
-																		setRenamingId(null);
-																		setRenameValue("");
-																	}
-																}}
-																onClick={(e) => e.stopPropagation()}
-																className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none dark:border-slate-700 dark:bg-slate-950"
-															/>
-														) : (
-															<div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-																{set.name}
-															</div>
-														)}
-													</div>
-
-													<div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-														{set.cards.length} cards
-														{" • "}
-														{new Date(set.createdAt).toLocaleDateString(
-															"en-GB",
-														)}
-													</div>
-												</button>
-
-												<div className="flex shrink-0 items-center gap-1">
-													{renamingId === set.id ? (
-														<button
-															type="button"
-															onClick={confirmRename}
-															className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-															aria-label="Save name">
-															<Save className="h-4 w-4" />
-														</button>
-													) : (
-														<button
-															type="button"
-															onClick={() => startRename(set)}
-															className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-															aria-label="Rename set">
-															<Pencil className="h-4 w-4" />
-														</button>
-													)}
-
-													<button
-														type="button"
-														onClick={() => deleteSet(set.id)}
-														className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-														aria-label="Delete set">
-														<Trash2 className="h-4 w-4" />
-													</button>
-												</div>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-					</aside>
-
-					<section className="min-w-0 overflow-hidden rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6">
-						<div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-							<div className="min-w-0">
-								<div className="text-sm text-slate-500 dark:text-slate-400">
-									Active set
-								</div>
-
-								<h2 className="break-words text-2xl font-bold">
-									{activeSet.name}
-								</h2>
-
-								<p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-									{allCards.length} cards, {stats.totalOptions} total options.
-								</p>
-							</div>
-
-							<div className="flex shrink-0 flex-wrap gap-2">
-								<button
-									type="button"
-									onClick={resetDeck}
-									className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-									<RotateCcw className="h-4 w-4" />
-									Reset
-								</button>
-							</div>
-						</div>
-
-						<div className="mt-5 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-							<div className="grid min-w-0 gap-2 rounded-2xl bg-slate-100 p-2 sm:grid-cols-4 dark:bg-slate-950">
-								{[
-									["study", "Study", BookOpen],
-									["quiz", "Quiz", Shuffle],
-									["typing", "Typing", Type],
-									["browse", "All cards", Layers3],
-								].map(([key, label, Icon]) => (
-									<button
-										key={String(key)}
-										className={classNames(
-											"rounded-2xl px-4 py-2 text-sm font-medium transition",
-											mode === key
-												? "bg-white shadow-sm dark:bg-slate-900"
-												: "text-slate-500 dark:text-slate-400",
-										)}
-										onClick={() => setMode(key as typeof mode)}>
-										<span className="inline-flex items-center gap-2">
-											<Icon className="h-4 w-4" />
-											{String(label)}
-										</span>
-									</button>
-								))}
-							</div>
-
-							<div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-								<label className="relative min-w-0">
-									<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-
-									<input
-										value={search}
-										onChange={(e) => setSearch(e.target.value)}
-										placeholder="Search cards"
-										className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm outline-none dark:border-slate-700 dark:bg-slate-950"
-									/>
-								</label>
-
-								<select
-									value={sortBy}
-									onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-									className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-950">
-									<option value="default">Default</option>
-									<option value="due">Sort by due date</option>
-									<option value="accuracy">Sort by accuracy</option>
-								</select>
-							</div>
-						</div>
-						{mode === "study" ? (
-							<div className="mt-6 flex min-w-0 flex-col">
-								<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
-									<div>
-										Card {filteredCards.length ? index + 1 : 1} of{" "}
-										{filteredCards.length || 1}
-									</div>
-
-									<button
-										type="button"
-										onClick={() => setShowOptions((v) => !v)}
-										className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium dark:border-slate-700">
-										<ListCollapse className="h-4 w-4" />
-										{showOptions ? "Hide options" : "View all options"}
-									</button>
-								</div>
-
-								<AnimatePresence mode="wait">
-									<motion.button
-										key={`${currentCard?.question}-${flipped}-${showOptions}`}
-										initial={{
-											opacity: 0,
-											y: 12,
-										}}
-										animate={{
-											opacity: 1,
-											y: 0,
-										}}
-										exit={{
-											opacity: 0,
-											y: -12,
-										}}
-										transition={{
-											duration: 0.22,
-										}}
-										onClick={() => setFlipped((v) => !v)}
-										className="flex min-h-[280px] w-full min-w-0 flex-col items-stretch justify-center overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 text-left shadow-sm dark:border-slate-800 dark:from-slate-950 dark:to-slate-900 sm:min-h-[320px] sm:p-6">
-										<div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-											{flipped ? "Answer" : "Question"}
-										</div>
-
-										<div className="break-words text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-											{flipped
-												? currentCard?.correctAnswers.join(", ")
-												: currentCard?.question}
-										</div>
-
-										{showOptions ? (
-											<div className="mt-6 min-w-0">
-												<div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
-													<div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-														All options
-													</div>
-
-													<div className="grid min-w-0 gap-2">
-														{currentCard?.options.map((option) => {
-															const isCorrect =
-																currentCard.correctAnswers.includes(option);
-
-															return (
-																<div
-																	key={option}
-																	className={classNames(
-																		"break-words rounded-xl border px-3 py-2 text-sm",
-																		isCorrect
-																			? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
-																			: "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900",
-																	)}>
-																	{option}
-																</div>
-															);
-														})}
-													</div>
-												</div>
-											</div>
-										) : null}
-									</motion.button>
-								</AnimatePresence>
-
-								<div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-									<button
-										type="button"
-										onClick={goPrev}
-										className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
-										<ChevronLeft className="h-4 w-4" />
-										Prev
-									</button>
-
-									<button
-										type="button"
-										onClick={() => setFlipped((v) => !v)}
-										className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
-										Flip
-									</button>
-
-									<button
-										type="button"
-										onClick={goNext}
-										className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
-										Next
-										<ChevronRight className="h-4 w-4" />
-									</button>
-								</div>
-							</div>
-						) : mode === "quiz" ? (
-							<div className="mt-6 min-w-0 space-y-4">
-								<div className="flex flex-wrap items-center justify-between gap-3">
-									<div className="flex flex-wrap items-center gap-2">
-										<button
-											type="button"
-											onClick={() => setShowQuizSettings((v) => !v)}
-											className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
-											<Settings2 className="h-4 w-4" />
-											Quiz settings
-										</button>
-
-										{quizStarted ? (
-											<button
-												type="button"
-												onClick={abandonQuiz}
-												className="inline-flex items-center gap-2 rounded-2xl border border-red-200 px-4 py-2 text-sm font-medium text-red-600 dark:border-red-900">
-												<X className="h-4 w-4" />
-												Exit quiz
-											</button>
-										) : null}
-									</div>
-
-									{quizStarted ? (
-										<div className="text-sm text-slate-500 dark:text-slate-400">
-											Question {quiz.index + 1} of {quizDeck.length} • Score:{" "}
-											{quiz.score}
-										</div>
-									) : null}
-								</div>
-
-								<AnimatePresence>
-									{showQuizSettings ? (
-										<motion.div
-											initial={{
-												opacity: 0,
-												height: 0,
-											}}
-											animate={{
-												opacity: 1,
-												height: "auto",
-											}}
-											exit={{
-												opacity: 0,
-												height: 0,
-											}}
-											className="overflow-hidden">
-											<div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
-												<div className="flex items-center justify-between">
-													<div>
-														<h3 className="font-semibold">Quiz settings</h3>
-
-														<p className="text-sm text-slate-500 dark:text-slate-400">
-															Choose which cards are included.
-														</p>
-													</div>
-												</div>
-
-												<div className="mt-5 grid gap-5 lg:grid-cols-2">
-													<label className="block">
-														<span className="mb-2 block text-sm font-medium">
-															Minimum accuracy: {quizSettings.minAccuracy}%
-														</span>
-
-														<input
-															type="range"
-															min="0"
-															max="100"
-															step="5"
-															value={quizSettings.minAccuracy}
-															onChange={(e) =>
-																setQuizSettings((prev) => ({
-																	...prev,
-																	minAccuracy: Number(e.target.value),
-																}))
-															}
-															className="w-full"
-														/>
-													</label>
-
-													<label className="block">
-														<span className="mb-2 block text-sm font-medium">
-															Maximum accuracy: {quizSettings.maxAccuracy}%
-														</span>
-
-														<input
-															type="range"
-															min="0"
-															max="100"
-															step="5"
-															value={quizSettings.maxAccuracy}
-															onChange={(e) =>
-																setQuizSettings((prev) => ({
-																	...prev,
-																	maxAccuracy: Number(e.target.value),
-																}))
-															}
-															className="w-full"
-														/>
-													</label>
-												</div>
-
-												<div className="mt-5 grid gap-4">
-													<label className="flex items-start gap-3">
-														<input
-															type="checkbox"
-															checked={quizSettings.excludePerfect}
-															onChange={(e) =>
-																setQuizSettings((prev) => ({
-																	...prev,
-																	excludePerfect: e.target.checked,
-																}))
-															}
-															className="mt-1"
-														/>
-
-														<span>
-															<span className="block text-sm font-medium">
-																Exclude 100% accuracy cards
-															</span>
-
-															<span className="block text-xs text-slate-500 dark:text-slate-400">
-																Remove cards you have answered correctly every
-																time.
-															</span>
-														</span>
-													</label>
-
-													<label className="flex items-start gap-3">
-														<input
-															type="checkbox"
-															checked={quizSettings.dueOnly}
-															onChange={(e) =>
-																setQuizSettings((prev) => ({
-																	...prev,
-																	dueOnly: e.target.checked,
-																}))
-															}
-															className="mt-1"
-														/>
-
-														<span>
-															<span className="block text-sm font-medium">
-																Due cards only
-															</span>
-
-															<span className="block text-xs text-slate-500 dark:text-slate-400">
-																Only include cards currently due for review.
-															</span>
-														</span>
-													</label>
-
-													<label className="flex items-start gap-3">
-														<input
-															type="checkbox"
-															checked={quizSettings.randomize}
-															onChange={(e) =>
-																setQuizSettings((prev) => ({
-																	...prev,
-																	randomize: e.target.checked,
-																}))
-															}
-															className="mt-1"
-														/>
-
-														<span>
-															<span className="block text-sm font-medium">
-																Randomise quiz
-															</span>
-
-															<span className="block text-xs text-slate-500 dark:text-slate-400">
-																Shuffle cards when starting a quiz.
-															</span>
-														</span>
-													</label>
-												</div>
-
-												<div className="mt-5 flex flex-wrap items-center gap-3">
-													<div className="text-sm text-slate-500 dark:text-slate-400">
-														{quizCandidateCards.length} cards match these
-														settings.
-													</div>
-
-													<button
-														type="button"
-														onClick={startQuiz}
-														disabled={!quizCandidateCards.length}
-														className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
-														<Play className="h-4 w-4" />
-														Start quiz
-													</button>
-												</div>
-											</div>
-										</motion.div>
-									) : null}
-								</AnimatePresence>
-
-								{!quizStarted ? (
-									<div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950">
-										<div className="text-center">
-											<Shuffle className="mx-auto h-10 w-10 text-slate-400" />
-
-											<h2 className="mt-4 text-xl font-semibold">
-												Ready to practise?
-											</h2>
-
-											<p className="mx-auto mt-2 max-w-xl text-sm text-slate-500 dark:text-slate-400">
-												Configure your quiz using the settings above, or select
-												individual cards in All cards to build a custom quiz.
-											</p>
-
-											<div className="mt-5 flex flex-wrap justify-center gap-3">
-												<button
-													type="button"
-													onClick={startQuiz}
-													disabled={!quizCandidateCards.length}
-													className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
-													<Play className="h-4 w-4" />
-													Start quiz
-												</button>
-
-												<button
-													type="button"
-													onClick={() => setMode("browse")}
-													className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium dark:border-slate-700">
-													Select cards
-												</button>
-											</div>
-										</div>
-									</div>
-								) : activeQuizCard ? (
-									<div className="min-w-0 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
-										<div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-											Quiz question
-										</div>
-
-										<h2 className="mt-3 break-words text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
-											{activeQuizCard.question}
-										</h2>
-
-										<div className="mt-3 text-sm text-slate-600 dark:text-slate-400">
-											{isMultiSelect
-												? "Select all correct answers."
-												: "Select the correct answer."}
-										</div>
-
-										<div className="mt-5 grid min-w-0 gap-3">
-											{activeQuizCard.options.map((choice) => {
-												const isCorrect =
-													activeQuizCard.correctAnswers.includes(choice);
-
-												const isSelected = selectedSet.has(choice);
-
-												const showResult = quiz.submitted;
-
-												return (
-													<button
-														key={choice}
-														type="button"
-														onClick={() => toggleSelection(choice)}
-														className={classNames(
-															"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition",
-															!showResult &&
-																isSelected &&
-																"border-slate-900 bg-slate-100 dark:border-slate-100 dark:bg-slate-800",
-															!showResult &&
-																!isSelected &&
-																"border-slate-200 bg-white hover:bg-slate-500 dark:border-slate-700 dark:bg-slate-900",
-															showResult &&
-																isCorrect &&
-																"border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950",
-															showResult &&
-																isSelected &&
-																!isCorrect &&
-																"border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950",
-														)}>
-														<span className="flex min-w-0 items-center gap-3">
-															<span
-																className={classNames(
-																	"inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-																	isSelected
-																		? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-																		: "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-950",
-																)}>
-																{isSelected ? (
-																	<Check className="h-3 w-3" />
-																) : null}
-															</span>
-
-															<span className="break-words">{choice}</span>
-														</span>
-
-														<span className="ml-3 shrink-0">
-															{showResult && isCorrect ? (
-																<CheckCircle2 className="h-5 w-5 text-green-600" />
-															) : showResult && isSelected && !isCorrect ? (
-																<XCircle className="h-5 w-5 text-red-600" />
-															) : null}
-														</span>
-													</button>
-												);
-											})}
-										</div>
-
-										{quiz.submitted ? (
-											<div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-900">
-												{uniqueStrings(quiz.selected).length ===
-													uniqueStrings(activeQuizCard.correctAnswers).length &&
-												uniqueStrings(quiz.selected).every((item) =>
-													activeQuizCard.correctAnswers.includes(item),
-												)
-													? "Correct."
-													: "Not quite. The correct answers are highlighted in green."}
-											</div>
-										) : null}
-
-										<div className="mt-5 flex flex-wrap justify-end gap-3">
-											{!quiz.submitted ? (
-												<button
-													type="button"
-													onClick={submitQuiz}
-													disabled={quiz.selected.length === 0}
-													className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
-													Submit
-												</button>
-											) : (
-												<button
-													type="button"
-													onClick={nextQuiz}
-													className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
-													{quiz.index + 1 >= quizDeck.length
-														? "Finish"
-														: "Next question"}
-												</button>
-											)}
-										</div>
-									</div>
-								) : null}
-							</div>
-						) : mode === "typing" ? (
-							<div className="mt-6 min-w-0">
-								<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
-									<div>
-										Card {allCards.length ? typing.index + 1 : 1} of{" "}
-										{allCards.length || 1}
-									</div>
-
-									<div>
-										{currentTypingCard?.correctAnswers.length > 1
-											? "Type answers separated by commas"
-											: "Type the answer"}
-									</div>
-								</div>
-
-								<div className="min-w-0 rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
-									<div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
-										Typing test
-									</div>
-
-									<h2 className="mt-3 break-words text-xl font-semibold leading-tight sm:text-2xl">
-										{currentTypingCard?.question}
-									</h2>
-
-									<textarea
-										value={typing.value}
-										onChange={(e) =>
-											setTyping((prev) => ({
-												...prev,
-												value: e.target.value,
-											}))
-										}
-										rows={4}
-										placeholder="Type your answer here"
-										className="mt-4 w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-									/>
-
-									<div className="mt-4 flex flex-wrap gap-3">
-										<button
-											type="button"
-											onClick={submitTyping}
-											className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
-											Check answer
-										</button>
-
-										<button
-											type="button"
-											onClick={nextTyping}
-											className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
-											Next card
-										</button>
-									</div>
-
-									{typing.submitted ? (
-										<div
-											className={classNames(
-												"mt-4 rounded-2xl border p-4 text-sm",
-												typing.correct
-													? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
-													: "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950",
-											)}>
-											{typing.correct
-												? "Correct."
-												: `Incorrect. Correct answer${currentTypingCard?.correctAnswers.length > 1 ? "s are" : " is"}: ${currentTypingCard?.correctAnswers.join(", ")}`}
-										</div>
-									) : null}
-								</div>
-							</div>
-						) : (
-							<div className="mt-6 min-w-0 space-y-4">
-								<div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+				<main className="mt-6 min-w-0 flex-1">
+					{/* Mobile / tablet sidebar toggle */}
+					<div className="mb-4 xl:hidden">
+						<button
+							type="button"
+							onClick={() => setSidebarOpen((open) => !open)}
+							className="inline-flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium shadow-sm dark:border-slate-800 dark:bg-slate-900">
+							<span className="flex items-center gap-2">
+								<FolderPlus className="h-4 w-4" />
+								{sidebarOpen ? "Hide your sets" : "Show sets"}
+							</span>
+
+							<ChevronRight
+								className={classNames(
+									"h-4 w-4 transition-transform",
+									sidebarOpen && "rotate-90",
+								)}
+							/>
+						</button>
+					</div>
+
+					<div className="flex min-w-0 flex-col gap-6 xl:flex-row">
+						<aside
+							className={classNames(
+								"min-w-0 space-y-6 xl:w-[320px] xl:shrink-0",
+								!sidebarOpen && "hidden xl:block",
+							)}>
+							<div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+								<div className="flex items-center justify-between gap-3">
 									<div className="min-w-0">
-										<div className="text-sm font-medium">
-											{selectedCardIds.length} selected
-										</div>
+										<h2 className="text-lg font-semibold">Your sets</h2>
 
-										<div className="text-sm text-slate-500 dark:text-slate-400">
-											Showing {filteredCards.length} of {allCards.length} cards.
-										</div>
+										<p className="text-sm text-slate-500 dark:text-slate-400">
+											Stored locally in this browser.
+										</p>
 									</div>
 
-									<div className="flex flex-wrap gap-2">
-										<button
-											type="button"
-											onClick={
-												allVisibleSelected ? clearAllCards : selectAllCards
-											}
-											className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium dark:border-slate-700 dark:bg-slate-900">
-											{allVisibleSelected ? (
-												<Square className="h-4 w-4" />
-											) : (
-												<CheckSquare className="h-4 w-4" />
-											)}
-
-											{allVisibleSelected ? "Clear all" : "Select all"}
-										</button>
-
-										<button
-											type="button"
-											onClick={startCustomQuiz}
-											disabled={!selectedCardIds.length}
-											className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
-											<Play className="h-4 w-4" />
-											Custom quiz
-										</button>
-									</div>
+									<FolderPlus className="h-5 w-5 shrink-0 text-slate-400" />
 								</div>
 
-								<div className="space-y-3">
-									{filteredCards.map((card) => {
-										const selected = selectedCardIds.includes(card.id);
-
-										const expanded = expandedCardId === card.id;
+								<div className="mt-4 space-y-3">
+									{sets.map((set) => {
+										const active = set.id === activeSetId;
 
 										return (
 											<div
-												key={card.id}
+												key={set.id}
 												className={classNames(
-													"min-w-0 rounded-3xl border bg-white p-4 dark:bg-slate-900",
-													selected
-														? "border-slate-900 ring-1 ring-slate-900 dark:border-slate-100 dark:ring-slate-100"
-														: "border-slate-200 dark:border-slate-800",
+													"rounded-2xl border p-4 transition",
+													active
+														? "border-slate-900 bg-slate-50 dark:border-slate-100 dark:bg-slate-950"
+														: "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900",
 												)}>
-												<div className="flex min-w-0 items-start gap-3">
+												<div className="flex min-w-0 items-start justify-between gap-3">
 													<button
 														type="button"
-														onClick={() => toggleCardSelection(card.id)}
-														className="mt-1 shrink-0"
-														aria-label={
-															selected
-																? "Remove card from selection"
-																: "Select card"
-														}>
-														{selected ? (
-															<CheckSquare className="h-5 w-5" />
-														) : (
-															<Square className="h-5 w-5 text-slate-400" />
-														)}
-													</button>
-
-													<button
-														type="button"
-														onClick={() =>
-															setExpandedCardId((prev) =>
-																prev === card.id ? null : card.id,
-															)
-														}
+														onClick={() => setActiveSetId(set.id)}
 														className="min-w-0 flex-1 text-left">
-														<div className="break-words text-base font-semibold">
-															{card.question}
+														<div className="flex min-w-0 items-center gap-2">
+															<LayoutGrid className="h-4 w-4 shrink-0 text-slate-400" />
+
+															{renamingId === set.id ? (
+																<input
+																	autoFocus
+																	value={renameValue}
+																	onChange={(e) =>
+																		setRenameValue(e.target.value)
+																	}
+																	onKeyDown={(e) => {
+																		if (e.key === "Enter") {
+																			confirmRename();
+																		}
+
+																		if (e.key === "Escape") {
+																			setRenamingId(null);
+																			setRenameValue("");
+																		}
+																	}}
+																	onClick={(e) => e.stopPropagation()}
+																	className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none dark:border-slate-700 dark:bg-slate-950"
+																/>
+															) : (
+																<div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+																	{set.name}
+																</div>
+															)}
 														</div>
 
-														<div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-															Accuracy {cardAccuracy(card)}% •{" "}
-															{card.progress.attempts} attempts
+														<div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+															{set.cards.length} cards
+															{" • "}
+															{new Date(set.createdAt).toLocaleDateString(
+																"en-GB",
+															)}
 														</div>
 													</button>
 
-													<ChevronRight
-														className={classNames(
-															"h-5 w-5 shrink-0 text-slate-400 transition",
-															expanded && "rotate-90",
+													<div className="flex shrink-0 items-center gap-1">
+														{renamingId === set.id ? (
+															<button
+																type="button"
+																onClick={confirmRename}
+																className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+																aria-label="Save name">
+																<Save className="h-4 w-4" />
+															</button>
+														) : (
+															<button
+																type="button"
+																onClick={() => startRename(set)}
+																className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+																aria-label="Rename set">
+																<Pencil className="h-4 w-4" />
+															</button>
 														)}
-													/>
-												</div>
 
-												{expanded ? (
-													<div className="mt-4 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-														<div>
-															<div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-																Correct answer(s)
-															</div>
-
-															<div className="mt-2 flex flex-wrap gap-2">
-																{card.correctAnswers.map((answer) => (
-																	<span
-																		key={answer}
-																		className="rounded-full border border-green-300 bg-green-50 px-3 py-1 text-sm dark:border-green-700 dark:bg-green-950">
-																		{answer}
-																	</span>
-																))}
-															</div>
-														</div>
-
-														<div>
-															<div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-																All options
-															</div>
-
-															<div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
-																{card.options.map((option) => (
-																	<div
-																		key={option}
-																		className={classNames(
-																			"break-words rounded-xl border px-3 py-2 text-sm",
-																			card.correctAnswers.includes(option)
-																				? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
-																				: "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900",
-																		)}>
-																		{option}
-																	</div>
-																))}
-															</div>
-														</div>
-
-														<div className="grid gap-2 sm:grid-cols-3">
-															<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
-																<Target className="h-4 w-4 text-slate-400" />
-																{card.progress.correct}/{card.progress.attempts}{" "}
-																correct
-															</div>
-
-															<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
-																<Clock3 className="h-4 w-4 text-slate-400" />
-																{card.progress.nextReview
-																	? new Date(
-																			card.progress.nextReview,
-																		).toLocaleString("en-GB")
-																	: "Not scheduled"}
-															</div>
-
-															<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
-																<BarChart3 className="h-4 w-4 text-slate-400" />
-																Ease {card.progress.ease.toFixed(1)}
-															</div>
-														</div>
+														<button
+															type="button"
+															onClick={() => deleteSet(set.id)}
+															className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+															aria-label="Delete set">
+															<Trash2 className="h-4 w-4" />
+														</button>
 													</div>
-												) : null}
+												</div>
 											</div>
 										);
 									})}
 								</div>
 							</div>
-						)}
-					</section>
+						</aside>
+						<section className="min-w-0 overflow-hidden rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6">
+							<div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+								<div className="min-w-0">
+									<div className="text-sm text-slate-500 dark:text-slate-400">
+										Active set
+									</div>
+
+									<h2 className="break-words text-2xl font-bold">
+										{activeSet.name}
+									</h2>
+
+									<p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+										{allCards.length} cards, {stats.totalOptions} total options.
+									</p>
+								</div>
+
+								<div className="flex shrink-0 flex-wrap gap-2">
+									<button
+										type="button"
+										onClick={resetDeck}
+										className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+										<RotateCcw className="h-4 w-4" />
+										Reset
+									</button>
+								</div>
+							</div>
+
+							<div className="mt-5 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+								<div className="grid min-w-0 gap-2 rounded-2xl bg-slate-100 p-2 sm:grid-cols-4 dark:bg-slate-950">
+									{[
+										["study", "Study", BookOpen],
+										["quiz", "Quiz", Shuffle],
+										["typing", "Typing", Type],
+										["browse", "All cards", Layers3],
+									].map(([key, label, Icon]) => (
+										<button
+											key={String(key)}
+											className={classNames(
+												"rounded-2xl px-4 py-2 text-sm font-medium transition",
+												mode === key
+													? "bg-white shadow-sm dark:bg-slate-900"
+													: "text-slate-500 dark:text-slate-400",
+											)}
+											onClick={() => setMode(key as typeof mode)}>
+											<span className="inline-flex items-center gap-2">
+												<Icon className="h-4 w-4" />
+												{String(label)}
+											</span>
+										</button>
+									))}
+								</div>
+
+								<div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+									<label className="relative min-w-0">
+										<Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+										<input
+											value={search}
+											onChange={(e) => setSearch(e.target.value)}
+											placeholder="Search cards"
+											className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm outline-none dark:border-slate-700 dark:bg-slate-950"
+										/>
+									</label>
+
+									<select
+										value={sortBy}
+										onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+										className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none dark:border-slate-700 dark:bg-slate-950">
+										<option value="default">Default</option>
+										<option value="due">Sort by due date</option>
+										<option value="accuracy">Sort by accuracy</option>
+									</select>
+								</div>
+							</div>
+							{mode === "study" ? (
+								<div className="mt-6 flex min-w-0 flex-col">
+									<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+										<div>
+											Card {filteredCards.length ? index + 1 : 1} of{" "}
+											{filteredCards.length || 1}
+										</div>
+
+										<button
+											type="button"
+											onClick={() => setShowOptions((v) => !v)}
+											className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium dark:border-slate-700">
+											<ListCollapse className="h-4 w-4" />
+											{showOptions ? "Hide options" : "View all options"}
+										</button>
+									</div>
+
+									<AnimatePresence mode="wait">
+										<motion.button
+											key={`${currentCard?.question}-${flipped}-${showOptions}`}
+											initial={{
+												opacity: 0,
+												y: 12,
+											}}
+											animate={{
+												opacity: 1,
+												y: 0,
+											}}
+											exit={{
+												opacity: 0,
+												y: -12,
+											}}
+											transition={{
+												duration: 0.22,
+											}}
+											onClick={() => setFlipped((v) => !v)}
+											className="flex min-h-[280px] w-full min-w-0 flex-col items-stretch justify-center overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-5 text-left shadow-sm dark:border-slate-800 dark:from-slate-950 dark:to-slate-900 sm:min-h-[320px] sm:p-6">
+											<div className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+												{flipped ? "Answer" : "Question"}
+											</div>
+
+											<div className="break-words text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+												{flipped
+													? currentCard?.correctAnswers.join(", ")
+													: currentCard?.question}
+											</div>
+
+											{showOptions ? (
+												<div className="mt-6 min-w-0">
+													<div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
+														<div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+															All options
+														</div>
+
+														<div className="grid min-w-0 gap-2">
+															{currentCard?.options.map((option) => {
+																const isCorrect =
+																	currentCard.correctAnswers.includes(option);
+
+																return (
+																	<div
+																		key={option}
+																		className={classNames(
+																			"break-words rounded-xl border px-3 py-2 text-sm",
+																			isCorrect
+																				? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
+																				: "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900",
+																		)}>
+																		{option}
+																	</div>
+																);
+															})}
+														</div>
+													</div>
+												</div>
+											) : null}
+										</motion.button>
+									</AnimatePresence>
+
+									<div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+										<button
+											type="button"
+											onClick={goPrev}
+											className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
+											<ChevronLeft className="h-4 w-4" />
+											Prev
+										</button>
+
+										<button
+											type="button"
+											onClick={() => setFlipped((v) => !v)}
+											className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
+											Flip
+										</button>
+
+										<button
+											type="button"
+											onClick={goNext}
+											className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
+											Next
+											<ChevronRight className="h-4 w-4" />
+										</button>
+									</div>
+								</div>
+							) : mode === "quiz" ? (
+								<div className="mt-6 min-w-0 space-y-4">
+									<div className="flex flex-wrap items-center justify-between gap-3">
+										<div className="flex flex-wrap items-center gap-2">
+											<button
+												type="button"
+												onClick={() => setShowQuizSettings((v) => !v)}
+												className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
+												<Settings2 className="h-4 w-4" />
+												Quiz settings
+											</button>
+
+											{quizStarted ? (
+												<button
+													type="button"
+													onClick={abandonQuiz}
+													className="inline-flex items-center gap-2 rounded-2xl border border-red-200 px-4 py-2 text-sm font-medium text-red-600 dark:border-red-900">
+													<X className="h-4 w-4" />
+													Exit quiz
+												</button>
+											) : null}
+										</div>
+
+										{quizStarted ? (
+											<div className="text-sm text-slate-500 dark:text-slate-400">
+												Question {quiz.index + 1} of {quizDeck.length} • Score:{" "}
+												{quiz.score}
+											</div>
+										) : null}
+									</div>
+
+									<AnimatePresence>
+										{showQuizSettings ? (
+											<motion.div
+												initial={{
+													opacity: 0,
+													height: 0,
+												}}
+												animate={{
+													opacity: 1,
+													height: "auto",
+												}}
+												exit={{
+													opacity: 0,
+													height: 0,
+												}}
+												className="overflow-hidden">
+												<div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
+													<div className="flex items-center justify-between">
+														<div>
+															<h3 className="font-semibold">Quiz settings</h3>
+
+															<p className="text-sm text-slate-500 dark:text-slate-400">
+																Choose which cards are included.
+															</p>
+														</div>
+													</div>
+
+													<div className="mt-5 grid gap-5 lg:grid-cols-2">
+														<label className="block">
+															<span className="mb-2 block text-sm font-medium">
+																Minimum accuracy: {quizSettings.minAccuracy}%
+															</span>
+
+															<input
+																type="range"
+																min="0"
+																max="100"
+																step="5"
+																value={quizSettings.minAccuracy}
+																onChange={(e) =>
+																	setQuizSettings((prev) => ({
+																		...prev,
+																		minAccuracy: Number(e.target.value),
+																	}))
+																}
+																className="w-full"
+															/>
+														</label>
+
+														<label className="block">
+															<span className="mb-2 block text-sm font-medium">
+																Maximum accuracy: {quizSettings.maxAccuracy}%
+															</span>
+
+															<input
+																type="range"
+																min="0"
+																max="100"
+																step="5"
+																value={quizSettings.maxAccuracy}
+																onChange={(e) =>
+																	setQuizSettings((prev) => ({
+																		...prev,
+																		maxAccuracy: Number(e.target.value),
+																	}))
+																}
+																className="w-full"
+															/>
+														</label>
+													</div>
+
+													<div className="mt-5 grid gap-4">
+														<label className="flex items-start gap-3">
+															<input
+																type="checkbox"
+																checked={quizSettings.excludePerfect}
+																onChange={(e) =>
+																	setQuizSettings((prev) => ({
+																		...prev,
+																		excludePerfect: e.target.checked,
+																	}))
+																}
+																className="mt-1"
+															/>
+
+															<span>
+																<span className="block text-sm font-medium">
+																	Exclude 100% accuracy cards
+																</span>
+
+																<span className="block text-xs text-slate-500 dark:text-slate-400">
+																	Remove cards you have answered correctly every
+																	time.
+																</span>
+															</span>
+														</label>
+
+														<label className="flex items-start gap-3">
+															<input
+																type="checkbox"
+																checked={quizSettings.dueOnly}
+																onChange={(e) =>
+																	setQuizSettings((prev) => ({
+																		...prev,
+																		dueOnly: e.target.checked,
+																	}))
+																}
+																className="mt-1"
+															/>
+
+															<span>
+																<span className="block text-sm font-medium">
+																	Due cards only
+																</span>
+
+																<span className="block text-xs text-slate-500 dark:text-slate-400">
+																	Only include cards currently due for review.
+																</span>
+															</span>
+														</label>
+
+														<label className="flex items-start gap-3">
+															<input
+																type="checkbox"
+																checked={quizSettings.randomize}
+																onChange={(e) =>
+																	setQuizSettings((prev) => ({
+																		...prev,
+																		randomize: e.target.checked,
+																	}))
+																}
+																className="mt-1"
+															/>
+
+															<span>
+																<span className="block text-sm font-medium">
+																	Randomise quiz
+																</span>
+
+																<span className="block text-xs text-slate-500 dark:text-slate-400">
+																	Shuffle cards when starting a quiz.
+																</span>
+															</span>
+														</label>
+													</div>
+
+													<div className="mt-5 flex flex-wrap items-center gap-3">
+														<div className="text-sm text-slate-500 dark:text-slate-400">
+															{quizCandidateCards.length} cards match these
+															settings.
+														</div>
+
+														<button
+															type="button"
+															onClick={startQuiz}
+															disabled={!quizCandidateCards.length}
+															className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
+															<Play className="h-4 w-4" />
+															Start quiz
+														</button>
+													</div>
+												</div>
+											</motion.div>
+										) : null}
+									</AnimatePresence>
+
+									{!quizStarted ? (
+										<div className="rounded-3xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950">
+											<div className="text-center">
+												<Shuffle className="mx-auto h-10 w-10 text-slate-400" />
+
+												<h2 className="mt-4 text-xl font-semibold">
+													Ready to practise?
+												</h2>
+
+												<p className="mx-auto mt-2 max-w-xl text-sm text-slate-500 dark:text-slate-400">
+													Configure your quiz using the settings above, or
+													select individual cards in All cards to build a custom
+													quiz.
+												</p>
+
+												<div className="mt-5 flex flex-wrap justify-center gap-3">
+													<button
+														type="button"
+														onClick={startQuiz}
+														disabled={!quizCandidateCards.length}
+														className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
+														<Play className="h-4 w-4" />
+														Start quiz
+													</button>
+
+													<button
+														type="button"
+														onClick={() => setMode("browse")}
+														className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-medium dark:border-slate-700">
+														Select cards
+													</button>
+												</div>
+											</div>
+										</div>
+									) : activeQuizCard ? (
+										<div className="min-w-0 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
+											<div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+												Quiz question
+											</div>
+
+											<h2 className="mt-3 break-words text-xl font-semibold leading-tight text-slate-900 dark:text-slate-100 sm:text-2xl">
+												{activeQuizCard.question}
+											</h2>
+
+											<div className="mt-3 text-sm text-slate-600 dark:text-slate-400">
+												{isMultiSelect
+													? "Select all correct answers."
+													: "Select the correct answer."}
+											</div>
+
+											<div className="mt-5 grid min-w-0 gap-3">
+												{activeQuizCard.options.map((choice) => {
+													const isCorrect =
+														activeQuizCard.correctAnswers.includes(choice);
+
+													const isSelected = selectedSet.has(choice);
+
+													const showResult = quiz.submitted;
+
+													return (
+														<button
+															key={choice}
+															type="button"
+															onClick={() => toggleSelection(choice)}
+															className={classNames(
+																"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition",
+																!showResult &&
+																	isSelected &&
+																	"border-slate-900 bg-slate-100 dark:border-slate-100 dark:bg-slate-800",
+																!showResult &&
+																	!isSelected &&
+																	"border-slate-200 bg-white hover:bg-slate-500 dark:border-slate-700 dark:bg-slate-900",
+																showResult &&
+																	isCorrect &&
+																	"border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950",
+																showResult &&
+																	isSelected &&
+																	!isCorrect &&
+																	"border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950",
+															)}>
+															<span className="flex min-w-0 items-center gap-3">
+																<span
+																	className={classNames(
+																		"inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+																		isSelected
+																			? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+																			: "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-950",
+																	)}>
+																	{isSelected ? (
+																		<Check className="h-3 w-3" />
+																	) : null}
+																</span>
+
+																<span className="break-words">{choice}</span>
+															</span>
+
+															<span className="ml-3 shrink-0">
+																{showResult && isCorrect ? (
+																	<CheckCircle2 className="h-5 w-5 text-green-600" />
+																) : showResult && isSelected && !isCorrect ? (
+																	<XCircle className="h-5 w-5 text-red-600" />
+																) : null}
+															</span>
+														</button>
+													);
+												})}
+											</div>
+
+											{quiz.submitted ? (
+												<div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-900">
+													{uniqueStrings(quiz.selected).length ===
+														uniqueStrings(activeQuizCard.correctAnswers)
+															.length &&
+													uniqueStrings(quiz.selected).every((item) =>
+														activeQuizCard.correctAnswers.includes(item),
+													)
+														? "Correct."
+														: "Not quite. The correct answers are highlighted in green."}
+												</div>
+											) : null}
+
+											<div className="mt-5 flex flex-wrap justify-end gap-3">
+												{!quiz.submitted ? (
+													<button
+														type="button"
+														onClick={submitQuiz}
+														disabled={quiz.selected.length === 0}
+														className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
+														Submit
+													</button>
+												) : (
+													<button
+														type="button"
+														onClick={nextQuiz}
+														className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
+														{quiz.index + 1 >= quizDeck.length
+															? "Finish"
+															: "Next question"}
+													</button>
+												)}
+											</div>
+										</div>
+									) : null}
+								</div>
+							) : mode === "typing" ? (
+								<div className="mt-6 min-w-0">
+									<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+										<div>
+											Card {allCards.length ? typing.index + 1 : 1} of{" "}
+											{allCards.length || 1}
+										</div>
+
+										<div>
+											{currentTypingCard?.correctAnswers.length > 1
+												? "Type answers separated by commas"
+												: "Type the answer"}
+										</div>
+									</div>
+
+									<div className="min-w-0 rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950 sm:p-6">
+										<div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
+											Typing test
+										</div>
+
+										<h2 className="mt-3 break-words text-xl font-semibold leading-tight sm:text-2xl">
+											{currentTypingCard?.question}
+										</h2>
+
+										<textarea
+											value={typing.value}
+											onChange={(e) =>
+												setTyping((prev) => ({
+													...prev,
+													value: e.target.value,
+												}))
+											}
+											rows={4}
+											placeholder="Type your answer here"
+											className="mt-4 w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+										/>
+
+										<div className="mt-4 flex flex-wrap gap-3">
+											<button
+												type="button"
+												onClick={submitTyping}
+												className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
+												Check answer
+											</button>
+
+											<button
+												type="button"
+												onClick={nextTyping}
+												className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-medium dark:border-slate-700">
+												Next card
+											</button>
+										</div>
+
+										{typing.submitted ? (
+											<div
+												className={classNames(
+													"mt-4 rounded-2xl border p-4 text-sm",
+													typing.correct
+														? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
+														: "border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950",
+												)}>
+												{typing.correct
+													? "Correct."
+													: `Incorrect. Correct answer${currentTypingCard?.correctAnswers.length > 1 ? "s are" : " is"}: ${currentTypingCard?.correctAnswers.join(", ")}`}
+											</div>
+										) : null}
+									</div>
+								</div>
+							) : (
+								<div className="mt-6 min-w-0 space-y-4">
+									<div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+										<div className="min-w-0">
+											<div className="text-sm font-medium">
+												{selectedCardIds.length} selected
+											</div>
+
+											<div className="text-sm text-slate-500 dark:text-slate-400">
+												Showing {filteredCards.length} of {allCards.length}{" "}
+												cards.
+											</div>
+										</div>
+
+										<div className="flex flex-wrap gap-2">
+											<button
+												type="button"
+												onClick={
+													allVisibleSelected ? clearAllCards : selectAllCards
+												}
+												className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium dark:border-slate-700 dark:bg-slate-900">
+												{allVisibleSelected ? (
+													<Square className="h-4 w-4" />
+												) : (
+													<CheckSquare className="h-4 w-4" />
+												)}
+
+												{allVisibleSelected ? "Clear all" : "Select all"}
+											</button>
+
+											<button
+												type="button"
+												onClick={startCustomQuiz}
+												disabled={!selectedCardIds.length}
+												className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
+												<Play className="h-4 w-4" />
+												Custom quiz
+											</button>
+										</div>
+									</div>
+
+									<div className="space-y-3">
+										{filteredCards.map((card) => {
+											const selected = selectedCardIds.includes(card.id);
+
+											const expanded = expandedCardId === card.id;
+
+											return (
+												<div
+													key={card.id}
+													className={classNames(
+														"min-w-0 rounded-3xl border bg-white p-4 dark:bg-slate-900",
+														selected
+															? "border-slate-900 ring-1 ring-slate-900 dark:border-slate-100 dark:ring-slate-100"
+															: "border-slate-200 dark:border-slate-800",
+													)}>
+													<div className="flex min-w-0 items-start gap-3">
+														<button
+															type="button"
+															onClick={() => toggleCardSelection(card.id)}
+															className="mt-1 shrink-0"
+															aria-label={
+																selected
+																	? "Remove card from selection"
+																	: "Select card"
+															}>
+															{selected ? (
+																<CheckSquare className="h-5 w-5" />
+															) : (
+																<Square className="h-5 w-5 text-slate-400" />
+															)}
+														</button>
+
+														<button
+															type="button"
+															onClick={() =>
+																setExpandedCardId((prev) =>
+																	prev === card.id ? null : card.id,
+																)
+															}
+															className="min-w-0 flex-1 text-left">
+															<div className="break-words text-base font-semibold">
+																{card.question}
+															</div>
+
+															<div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+																Accuracy {cardAccuracy(card)}% •{" "}
+																{card.progress.attempts} attempts
+															</div>
+														</button>
+
+														<ChevronRight
+															className={classNames(
+																"h-5 w-5 shrink-0 text-slate-400 transition",
+																expanded && "rotate-90",
+															)}
+														/>
+													</div>
+
+													{expanded ? (
+														<div className="mt-4 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+															<div>
+																<div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+																	Correct answer(s)
+																</div>
+
+																<div className="mt-2 flex flex-wrap gap-2">
+																	{card.correctAnswers.map((answer) => (
+																		<span
+																			key={answer}
+																			className="rounded-full border border-green-300 bg-green-50 px-3 py-1 text-sm dark:border-green-700 dark:bg-green-950">
+																			{answer}
+																		</span>
+																	))}
+																</div>
+															</div>
+
+															<div>
+																<div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+																	All options
+																</div>
+
+																<div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+																	{card.options.map((option) => (
+																		<div
+																			key={option}
+																			className={classNames(
+																				"break-words rounded-xl border px-3 py-2 text-sm",
+																				card.correctAnswers.includes(option)
+																					? "border-green-300 bg-green-50 dark:border-green-700 dark:bg-green-950"
+																					: "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900",
+																			)}>
+																			{option}
+																		</div>
+																	))}
+																</div>
+															</div>
+
+															<div className="grid gap-2 sm:grid-cols-3">
+																<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
+																	<Target className="h-4 w-4 text-slate-400" />
+																	{card.progress.correct}/
+																	{card.progress.attempts} correct
+																</div>
+
+																<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
+																	<Clock3 className="h-4 w-4 text-slate-400" />
+																	{card.progress.nextReview
+																		? new Date(
+																				card.progress.nextReview,
+																			).toLocaleString("en-GB")
+																		: "Not scheduled"}
+																</div>
+
+																<div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
+																	<BarChart3 className="h-4 w-4 text-slate-400" />
+																	Ease {card.progress.ease.toFixed(1)}
+																</div>
+															</div>
+														</div>
+													) : null}
+												</div>
+											);
+										})}
+									</div>
+								</div>
+							)}
+						</section>
+					</div>
+					<div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+						<ProgressPill label="Sets" value={String(sets.length)} />
+
+						<ProgressPill label="Cards" value={String(stats.total)} />
+
+						<ProgressPill label="Due now" value={String(stats.dueNow)} />
+
+						<ProgressPill label="Reviewed" value={String(stats.reviewed)} />
+
+						<ProgressPill label="Mastered" value={String(stats.mastered)} />
+
+						<ProgressPill
+							label="Avg accuracy"
+							value={`${stats.avgAccuracy}%`}
+						/>
+					</div>
+					<div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-2">
+						<FileDropzone onImport={saveNewSet} />
+						<BackupRestore />
+					</div>
 				</main>
 			</div>
 		</div>
