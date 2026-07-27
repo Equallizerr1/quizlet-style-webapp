@@ -1,10 +1,4 @@
-import React, {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import * as XLSX from "xlsx";
 import {
@@ -17,7 +11,6 @@ import {
 	XCircle,
 	BookOpen,
 	FileSpreadsheet,
-	Sparkles,
 	Trash2,
 	Save,
 	ListCollapse,
@@ -25,13 +18,10 @@ import {
 	LayoutGrid,
 	Pencil,
 	Search,
-	MoonStar,
-	SunMedium,
 	Target,
 	BarChart3,
 	Layers3,
 	Type,
-	Eye,
 	Clock3,
 	Check,
 	Square,
@@ -102,7 +92,6 @@ type TypingState = {
 };
 
 const SET_STORAGE_KEY = "quizlet_style_app_sets_v3";
-const THEME_STORAGE_KEY = "quizlet_style_app_dark_mode_v1";
 const QUIZ_SESSION_STORAGE_KEY = "quizlet_style_app_active_quiz_v1";
 
 const defaultQuizSettings: QuizSettings = {
@@ -280,13 +269,13 @@ function parseWorkbookFile(file: File): Promise<Card[]> {
 
 				let current: Card | null = null;
 
-				rows.forEach((row) => {
+				for (const row of rows) {
 					const question = normalizeText(row[0]);
 					const answerB = normalizeText(row[1]);
 					const optionC = normalizeText(row[2]);
 
 					if (question) {
-						if (current && current.question) {
+						if (current) {
 							cards.push({
 								...current,
 								correctAnswers: uniqueStrings(current.correctAnswers),
@@ -311,23 +300,24 @@ function parseWorkbookFile(file: File): Promise<Card[]> {
 							progress: defaultProgress(),
 						};
 
-						return;
+						continue;
 					}
 
-					if (!current) return;
+					if (!current) {
+						continue;
+					}
 
 					if (answerB) {
 						current.correctAnswers.push(answerB);
-
 						current.options.push(answerB);
 					}
 
 					if (optionC) {
 						current.options.push(optionC);
 					}
-				});
+				}
 
-				if (current && current.question) {
+				if (current) {
 					cards.push({
 						...current,
 						correctAnswers: uniqueStrings(current.correctAnswers),
@@ -403,34 +393,6 @@ function usePersistentSets() {
 	}, [sets]);
 
 	return [sets, setSets] as const;
-}
-
-function useTheme() {
-	const [darkMode, setDarkMode] = useState<boolean>(() => {
-		if (typeof window === "undefined") {
-			return false;
-		}
-
-		const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-
-		if (saved !== null) {
-			return saved === "true";
-		}
-
-		return (
-			window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ?? false
-		);
-	});
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-
-		window.localStorage.setItem(THEME_STORAGE_KEY, String(darkMode));
-
-		document.documentElement.classList.toggle("dark", darkMode);
-	}, [darkMode]);
-
-	return [darkMode, setDarkMode] as const;
 }
 
 function FileDropzone({
@@ -560,11 +522,8 @@ function ProgressPill({ label, value }: { label: string; value: string }) {
 		</div>
 	);
 }
-
 function App() {
 	const [sets, setSets] = usePersistentSets();
-
-	const [darkMode, setDarkMode] = useTheme();
 
 	const [activeSetId, setActiveSetId] = useState<string>(
 		() => sets[0]?.id || sampleSet.id,
@@ -617,7 +576,7 @@ function App() {
 
 	const [renameValue, setRenameValue] = useState("");
 
-	const [resumeAvailable, setResumeAvailable] = useState(false);
+	const [, setResumeAvailable] = useState(false);
 
 	const [sessionRestored, setSessionRestored] = useState(false);
 
@@ -1060,12 +1019,6 @@ function App() {
 		startQuizWithCards(selectedCards);
 	};
 
-	const resumeQuiz = () => {
-		setMode("quiz");
-		setQuizStarted(true);
-		setResumeAvailable(false);
-	};
-
 	const abandonQuiz = () => {
 		setQuizStarted(false);
 		setQuizDeck([]);
@@ -1285,17 +1238,15 @@ function App() {
 		}
 	};
 
-	const correctSet = new Set(activeQuizCard?.correctAnswers || []);
-
 	const selectedSet = new Set(quiz.selected);
 
 	return (
 		<div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
 			<div className="mx-auto flex min-h-screen w-full max-w-7xl min-w-0 flex-col px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
-				{/* <header className="flex min-w-0 flex-col gap-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+				{/* Header intentionally kept commented out for now.
+				<header className="flex min-w-0 flex-col gap-4 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
 					<div className="min-w-0">
 						<div className="flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400">
-							<Sparkles className="h-4 w-4 shrink-0" />
 							Quizlet-style study app
 						</div>
 
@@ -1308,31 +1259,8 @@ function App() {
 							quizzes are also saved automatically so you can resume them later.
 						</p>
 					</div>
-
-					<div className="flex shrink-0 flex-wrap gap-2">
-						{resumeAvailable && !quizStarted ? (
-							<button
-								type="button"
-								onClick={resumeQuiz}
-								className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
-								<Play className="h-4 w-4" />
-								Resume quiz
-							</button>
-						) : null}
-
-						<button
-							type="button"
-							onClick={() => setDarkMode((v) => !v)}
-							className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-800">
-							{darkMode ? (
-								<SunMedium className="h-4 w-4" />
-							) : (
-								<MoonStar className="h-4 w-4" />
-							)}
-							{darkMode ? "Light mode" : "Dark mode"}
-						</button>
-					</div>
-				</header> */}
+				</header>
+				*/}
 
 				<div className="mt-6 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-6">
 					<ProgressPill label="Sets" value={String(sets.length)} />
@@ -1398,7 +1326,6 @@ function App() {
 
 																	if (e.key === "Escape") {
 																		setRenamingId(null);
-
 																		setRenameValue("");
 																	}
 																}}
@@ -1530,7 +1457,6 @@ function App() {
 								</select>
 							</div>
 						</div>
-
 						{mode === "study" ? (
 							<div className="mt-6 flex min-w-0 flex-col">
 								<div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
@@ -1899,7 +1825,7 @@ function App() {
 															"flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition",
 															!showResult &&
 																isSelected &&
-																"border-slate-900 bg-slate-100 dark:border-slate-100dark:bg-slate-800",
+																"border-slate-900 bg-slate-100 dark:border-slate-100 dark:bg-slate-800",
 															!showResult &&
 																!isSelected &&
 																"border-slate-200 bg-white hover:bg-slate-500 dark:border-slate-700 dark:bg-slate-900",
