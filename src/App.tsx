@@ -1502,7 +1502,7 @@ function App() {
 										onClick={() => setMode(key as typeof mode)}>
 										<span className="inline-flex items-center gap-2">
 											<Icon className="h-4 w-4" />
-											{label}
+											{String(label)}
 										</span>
 									</button>
 								))}
