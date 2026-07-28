@@ -995,7 +995,7 @@ function App() {
 		}
 
 		return shuffleArray(activeQuizCard.options);
-	}, [activeQuizCard]);
+	}, [activeQuizCard?.id]);
 
 	const isMultiSelect =
 		activeQuizCard?.correctAnswers.length > 1 ||
