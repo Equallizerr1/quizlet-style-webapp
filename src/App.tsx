@@ -877,7 +877,7 @@ function App() {
 
 	const [renameValue, setRenameValue] = useState("");
 
-	const [, setResumeAvailable] = useState(false);
+	const [resumeAvailable, setResumeAvailable] = useState(false);
 
 	const [sessionRestored, setSessionRestored] = useState(false);
 
@@ -1092,6 +1092,7 @@ function App() {
 
 		setResumeAvailable(false);
 	}, []);
+
 	useEffect(() => {
 		const handleFullscreenChange = () => {
 			setIsQuizFullscreen(document.fullscreenElement === quizModeRef.current);
@@ -1103,6 +1104,7 @@ function App() {
 			document.removeEventListener("fullscreenchange", handleFullscreenChange);
 		};
 	}, []);
+
 	useEffect(() => {
 		if (typeof window === "undefined") {
 			return;
@@ -1110,7 +1112,9 @@ function App() {
 
 		const raw = window.localStorage.getItem(QUIZ_SESSION_STORAGE_KEY);
 
-		if (!raw) return;
+		if (!raw) {
+			return;
+		}
 
 		try {
 			const saved = JSON.parse(raw) as SavedQuizSession;
@@ -1156,12 +1160,16 @@ function App() {
 				submitted: Boolean(saved.submitted),
 			});
 
+			// Automatically restore a saved quiz after page refresh
 			setQuizStarted(true);
 			setMode("quiz");
+
 			setResumeAvailable(true);
 			setSessionRestored(true);
 		} catch {
 			window.localStorage.removeItem(QUIZ_SESSION_STORAGE_KEY);
+
+			setResumeAvailable(false);
 		}
 	}, [sets]);
 
@@ -1210,6 +1218,55 @@ function App() {
 			setExpandedCardId(null);
 		}
 	}, [activeSetId]);
+	useEffect(() => {
+		const handleQuizKeyDown = (event: KeyboardEvent) => {
+			// Only respond when actively taking a quiz
+			if (mode !== "quiz" || !quizStarted || !activeQuizCard) {
+				return;
+			}
+
+			// Only respond to Spacebar
+			if (event.code !== "Space") {
+				return;
+			}
+
+			// Don't trigger when typing in an input, textarea, or select
+			const target = event.target as HTMLElement;
+
+			if (
+				target.tagName === "INPUT" ||
+				target.tagName === "TEXTAREA" ||
+				target.tagName === "SELECT"
+			) {
+				return;
+			}
+
+			// Prevent the page from scrolling when Spacebar is pressed
+			event.preventDefault();
+
+			// If the question hasn't been submitted yet,
+			// Spacebar submits the selected answer.
+			if (!quiz.submitted) {
+				// Don't submit if no answer has been selected
+				if (quiz.selected.length === 0) {
+					return;
+				}
+
+				submitQuiz();
+				return;
+			}
+
+			// If the answer has already been submitted,
+			// Spacebar moves to the next question.
+			nextQuiz();
+		};
+
+		window.addEventListener("keydown", handleQuizKeyDown);
+
+		return () => {
+			window.removeEventListener("keydown", handleQuizKeyDown);
+		};
+	}, [mode, quizStarted, activeQuizCard, quiz.submitted, quiz.selected]);
 
 	const saveNewSet = (name: string, importedCards: Card[]) => {
 		const cleanCards = importedCards.map((card, idx) => ({
@@ -1337,17 +1394,91 @@ function App() {
 
 		startQuizWithCards(selectedCards);
 	};
+	const resumeQuiz = () => {
+		if (typeof window === "undefined") {
+			return;
+		}
 
+		const raw = window.localStorage.getItem(QUIZ_SESSION_STORAGE_KEY);
+
+		if (!raw) {
+			setResumeAvailable(false);
+			return;
+		}
+
+		try {
+			const saved = JSON.parse(raw) as SavedQuizSession;
+
+			if (
+				!saved ||
+				!saved.quizStarted ||
+				!saved.activeSetId ||
+				!saved.quizDeckIds?.length
+			) {
+				setResumeAvailable(false);
+				return;
+			}
+
+			const savedSet = sets.find((set) => set.id === saved.activeSetId);
+
+			if (!savedSet) {
+				setResumeAvailable(false);
+				return;
+			}
+
+			const restoredDeck = saved.quizDeckIds
+				.map((id) => savedSet.cards.find((card) => card.id === id))
+				.filter((card): card is Card => Boolean(card));
+
+			if (!restoredDeck.length) {
+				setResumeAvailable(false);
+				return;
+			}
+
+			setActiveSetId(saved.activeSetId);
+
+			setSelectedCardIds(saved.selectedCardIds || []);
+
+			setQuizSettings({
+				...defaultQuizSettings,
+				...(saved.settings || {}),
+			});
+
+			setQuizDeck(restoredDeck);
+
+			setQuiz({
+				index: Math.min(saved.index || 0, restoredDeck.length - 1),
+				score: saved.score || 0,
+				selected: saved.selected || [],
+				submitted: Boolean(saved.submitted),
+			});
+
+			setQuizStarted(true);
+			setMode("quiz");
+			setResumeAvailable(true);
+			setSessionRestored(true);
+		} catch {
+			window.localStorage.removeItem(QUIZ_SESSION_STORAGE_KEY);
+			setResumeAvailable(false);
+		}
+	};
 	const abandonQuiz = () => {
+		// Make absolutely sure the latest progress is saved
+		saveQuizSession();
+
+		// Leave the quiz without deleting the saved session
 		setQuizStarted(false);
 		setQuizDeck([]);
+
 		setQuiz({
 			index: 0,
 			score: 0,
 			selected: [],
 			submitted: false,
 		});
-		clearQuizSession();
+
+		// Keep the user in Quiz mode so they can see Resume Quiz
+		setMode("quiz");
 	};
 
 	const goNext = () => {
@@ -2124,13 +2255,23 @@ function App() {
 												</p>
 
 												<div className="mt-5 flex flex-wrap justify-center gap-3">
+													{resumeAvailable ? (
+														<button
+															type="button"
+															onClick={resumeQuiz}
+															className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
+															<Play className="h-4 w-4" />
+															Resume quiz
+														</button>
+													) : null}
+
 													<button
 														type="button"
 														onClick={startQuiz}
 														disabled={!quizCandidateCards.length}
 														className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
 														<Play className="h-4 w-4" />
-														Start quiz
+														Start new quiz
 													</button>
 
 													<button
@@ -2251,8 +2392,11 @@ function App() {
 														type="button"
 														onClick={submitQuiz}
 														disabled={quiz.selected.length === 0}
-														className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900">
+														className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">
 														Submit
+														<kbd className="ml-2 rounded border border-slate-500 px-1.5 py-0.5 text-xs">
+															Space
+														</kbd>
 													</button>
 												) : (
 													<button
@@ -2262,6 +2406,10 @@ function App() {
 														{quiz.index + 1 >= quizDeck.length
 															? "Finish"
 															: "Next question"}
+
+														<kbd className="ml-2 rounded border border-slate-500 px-1.5 py-0.5 text-xs">
+															Space
+														</kbd>
 													</button>
 												)}
 											</div>
