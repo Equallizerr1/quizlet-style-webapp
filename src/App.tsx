@@ -1695,6 +1695,47 @@ function App() {
 		}
 	};
 	const selectedSet = new Set(quiz.selected);
+	useEffect(() => {
+		const handleStudyKeyDown = (event: KeyboardEvent) => {
+			// Only run shortcuts while in Study mode
+			if (mode !== "study") {
+				return;
+			}
+
+			// Don't trigger shortcuts while typing in an input,
+			// textarea, or select element
+			const target = event.target as HTMLElement;
+
+			if (
+				target.tagName === "INPUT" ||
+				target.tagName === "TEXTAREA" ||
+				target.tagName === "SELECT"
+			) {
+				return;
+			}
+
+			if (event.key === "ArrowLeft") {
+				event.preventDefault();
+				goPrev();
+			}
+
+			if (event.key === "ArrowRight") {
+				event.preventDefault();
+				goNext();
+			}
+
+			if (event.code === "Space") {
+				event.preventDefault();
+				setFlipped((v) => !v);
+			}
+		};
+
+		window.addEventListener("keydown", handleStudyKeyDown);
+
+		return () => {
+			window.removeEventListener("keydown", handleStudyKeyDown);
+		};
+	}, [mode, goPrev, goNext]);
 
 	return (
 		<div className="min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
@@ -2070,6 +2111,10 @@ function App() {
 
 												{isQuizFullscreen ? "Exit fullscreen" : "Fullscreen"}
 											</button>
+											<div className="text-sm text-slate-500 dark:text-slate-400">
+												Question {quiz.index + 1} of {quizDeck.length} • Score:{" "}
+												{quiz.score}
+											</div>
 										</div>
 									</div>
 
